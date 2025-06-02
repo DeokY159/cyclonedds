@@ -48,6 +48,27 @@
 #include "shm__monitor.h"
 #endif
 
+//modified point
+#include <stdio.h>
+#include <time.h>
+
+static void log_data_available(const char *topic_name)
+{
+  FILE *f = fopen("/tmp/cy_data.log", "a");
+  if (f) {
+    time_t t = time(NULL);
+    fprintf(f, "[%ld]\ton_data_available\ttopic=%s\n", t, topic_name);
+    fclose(f);
+  }
+}
+static void log_event_reader(const char *msg) {
+  FILE *f = fopen("/tmp/cy_listener.log", "a");
+  if (f) {
+    fprintf(f, "[%ld]\t%s\n", time(NULL), msg);
+    fclose(f);
+  }
+}
+
 DECL_ENTITY_LOCK_UNLOCK (dds_reader)
 
 #define DDS_READER_STATUS_MASK                                   \
@@ -216,9 +237,11 @@ static void data_avail_cb_trigger_waitsets (dds_entity *rd, uint32_t signal)
   }
 }
 
+//modified point
 static uint32_t da_or_dor_cb_invoke(struct dds_reader *rd, struct dds_listener const * const lst, uint32_t status_and_mask, bool async)
 {
   uint32_t signal = 0;
+  char log[256];
 
   if (lst->on_data_on_readers)
   {
@@ -230,6 +253,9 @@ static uint32_t da_or_dor_cb_invoke(struct dds_reader *rd, struct dds_listener c
     data_avail_cb_invoke_dor (sub, lst, async);
     ddsrt_mutex_unlock (&sub->m_observers_lock);
     ddsrt_mutex_lock (&rd->m_entity.m_observers_lock);
+
+    snprintf(log, sizeof(log), "on_data_on_readers");
+    log_event_reader(log);
   }
   else if(rd->m_entity.m_listener.on_data_available)
   {
@@ -239,6 +265,8 @@ static uint32_t da_or_dor_cb_invoke(struct dds_reader *rd, struct dds_listener c
     lst->on_data_available (rd->m_entity.m_hdllink.hdl, lst->on_data_available_arg);
     ddsrt_mutex_lock (&rd->m_entity.m_observers_lock);
   }
+  snprintf(log, sizeof(log), "%s", rd->m_topic->m_name);
+  log_data_available(log);
   return signal;
 }
 
@@ -277,6 +305,10 @@ static void update_requested_deadline_missed (struct dds_requested_deadline_miss
   //
   // (same line of reasoning for all of them)
   st->total_count_change++;
+
+  char log[256];
+  snprintf(log, sizeof(log), "on_requested_deadline_missed");
+  log_event_reader(log);
 }
 
 static void update_requested_incompatible_qos (struct dds_requested_incompatible_qos_status * __restrict st, const ddsi_status_cb_data_t *data)
@@ -284,6 +316,40 @@ static void update_requested_incompatible_qos (struct dds_requested_incompatible
   st->last_policy_id = data->extra;
   st->total_count++;
   st->total_count_change++;
+  char problem_qos[50];
+  switch (st->last_policy_id)
+        {
+            case DDS_INVALID_QOS_POLICY_ID:                         snprintf(problem_qos, sizeof(problem_qos), "DDS_INVALID_QOS_POLICY_ID"); break;
+            case DDS_USERDATA_QOS_POLICY_ID:                        snprintf(problem_qos, sizeof(problem_qos), "DDS_USERDATA_QOS_POLICY_ID"); break;
+            case DDS_DURABILITY_QOS_POLICY_ID:                      snprintf(problem_qos, sizeof(problem_qos), "DDS_DURABILITY_QOS_POLICY_ID"); break;
+            case DDS_PRESENTATION_QOS_POLICY_ID:                    snprintf(problem_qos, sizeof(problem_qos), "DDS_PRESENTATION_QOS_POLICY_ID"); break;
+            case DDS_DEADLINE_QOS_POLICY_ID:                        snprintf(problem_qos, sizeof(problem_qos), "DDS_DEADLINE_QOS_POLICY_ID"); break;
+            case DDS_LATENCYBUDGET_QOS_POLICY_ID:                   snprintf(problem_qos, sizeof(problem_qos), "DDS_LATENCYBUDGET_QOS_POLICY_ID"); break;
+            case DDS_OWNERSHIP_QOS_POLICY_ID:                       snprintf(problem_qos, sizeof(problem_qos), "DDS_OWNERSHIP_QOS_POLICY_ID"); break;
+            case DDS_OWNERSHIPSTRENGTH_QOS_POLICY_ID:               snprintf(problem_qos, sizeof(problem_qos), "DDS_OWNERSHIPSTRENGTH_QOS_POLICY_ID"); break;
+            case DDS_LIVELINESS_QOS_POLICY_ID:                      snprintf(problem_qos, sizeof(problem_qos), "DDS_LIVELINESS_QOS_POLICY_ID"); break;
+            case DDS_TIMEBASEDFILTER_QOS_POLICY_ID:                 snprintf(problem_qos, sizeof(problem_qos), "DDS_TIMEBASEDFILTER_QOS_POLICY_ID"); break;
+            case DDS_PARTITION_QOS_POLICY_ID:                       snprintf(problem_qos, sizeof(problem_qos), "DDS_PARTITION_QOS_POLICY_ID"); break;
+            case DDS_RELIABILITY_QOS_POLICY_ID:                     snprintf(problem_qos, sizeof(problem_qos), "DDS_RELIABILITY_QOS_POLICY_ID"); break;
+            case DDS_DESTINATIONORDER_QOS_POLICY_ID:                snprintf(problem_qos, sizeof(problem_qos), "DDS_DESTINATIONORDER_QOS_POLICY_ID"); break;
+            case DDS_HISTORY_QOS_POLICY_ID:                         snprintf(problem_qos, sizeof(problem_qos), "DDS_HISTORY_QOS_POLICY_ID"); break;
+            case DDS_RESOURCELIMITS_QOS_POLICY_ID:                  snprintf(problem_qos, sizeof(problem_qos), "DDS_RESOURCELIMITS_QOS_POLICY_ID"); break;
+            case DDS_ENTITYFACTORY_QOS_POLICY_ID:                   snprintf(problem_qos, sizeof(problem_qos), "DDS_ENTITYFACTORY_QOS_POLICY_ID"); break;
+            case DDS_WRITERDATALIFECYCLE_QOS_POLICY_ID:             snprintf(problem_qos, sizeof(problem_qos), "DDS_WRITERDATALIFECYCLE_QOS_POLICY_ID"); break;
+            case DDS_READERDATALIFECYCLE_QOS_POLICY_ID:             snprintf(problem_qos, sizeof(problem_qos), "DDS_READERDATALIFECYCLE_QOS_POLICY_ID"); break;
+            case DDS_TOPICDATA_QOS_POLICY_ID:                       snprintf(problem_qos, sizeof(problem_qos), "DDS_TOPICDATA_QOS_POLICY_ID"); break;
+            case DDS_GROUPDATA_QOS_POLICY_ID:                       snprintf(problem_qos, sizeof(problem_qos), "DDS_GROUPDATA_QOS_POLICY_ID"); break;
+            case DDS_TRANSPORTPRIORITY_QOS_POLICY_ID:               snprintf(problem_qos, sizeof(problem_qos), "DDS_TRANSPORTPRIORITY_QOS_POLICY_ID"); break;
+            case DDS_LIFESPAN_QOS_POLICY_ID:                        snprintf(problem_qos, sizeof(problem_qos), "DDS_LIFESPAN_QOS_POLICY_ID"); break;
+            case DDS_DURABILITYSERVICE_QOS_POLICY_ID:               snprintf(problem_qos, sizeof(problem_qos), "DDS_DURABILITYSERVICE_QOS_POLICY_ID"); break;
+            case DDS_PROPERTY_QOS_POLICY_ID:                        snprintf(problem_qos, sizeof(problem_qos), "DDS_PROPERTY_QOS_POLICY_ID"); break;
+            case DDS_TYPE_CONSISTENCY_ENFORCEMENT_QOS_POLICY_ID:    snprintf(problem_qos, sizeof(problem_qos), "DDS_TYPE_CONSISTENCY_ENFORCEMENT_QOS_POLICY_ID"); break;
+            case DDS_DATA_REPRESENTATION_QOS_POLICY_ID:             snprintf(problem_qos, sizeof(problem_qos), "DDS_DATA_REPRESENTATION_QOS_POLICY_ID"); break;
+            default: break;
+        }
+  char log[256];
+  snprintf(log, sizeof(log), "on_requested_incompatible_qos\t%s", problem_qos);
+  log_event_reader(log);
 }
 
 static void update_sample_lost (struct dds_sample_lost_status * __restrict st, const ddsi_status_cb_data_t *data)
@@ -291,6 +357,10 @@ static void update_sample_lost (struct dds_sample_lost_status * __restrict st, c
   (void) data;
   st->total_count++;
   st->total_count_change++;
+
+  char log[256];
+  snprintf(log, sizeof(log), "on_sample_lost");
+  log_event_reader(log);
 }
 
 static void update_sample_rejected (struct dds_sample_rejected_status * __restrict st, const ddsi_status_cb_data_t *data)
@@ -299,6 +369,10 @@ static void update_sample_rejected (struct dds_sample_rejected_status * __restri
   st->last_instance_handle = data->handle;
   st->total_count++;
   st->total_count_change++;
+
+  char log[256];
+  snprintf(log, sizeof(log), "on_sample_rejected");
+  log_event_reader(log);
 }
 
 static void update_liveliness_changed (struct dds_liveliness_changed_status * __restrict st, const ddsi_status_cb_data_t *data)
@@ -343,20 +417,30 @@ static void update_liveliness_changed (struct dds_liveliness_changed_status * __
       st->alive_count_change++;
       break;
   }
+  char log[256];
+  snprintf(log, sizeof(log), "on_liveliness_changed");
+  log_event_reader(log);
 }
 
+//modified point
 static void update_subscription_matched (struct dds_subscription_matched_status * __restrict st, const ddsi_status_cb_data_t *data)
 {
   st->last_publication_handle = data->handle;
+  char match_or_un[10];
   if (data->add) {
     st->total_count++;
     st->current_count++;
     st->total_count_change++;
     st->current_count_change++;
+    snprintf(match_or_un, sizeof(match_or_un), "matched");
   } else {
     st->current_count--;
     st->current_count_change--;
+    snprintf(match_or_un, sizeof(match_or_un), "unmatched");
   }
+  char log[256];
+  snprintf(log, sizeof(log), "on_subscription_matched\t%s", match_or_un);
+  log_event_reader(log);
 }
 
 /* Reset sets everything (type) 0, including the reason field, verify that 0 is correct */
